@@ -17,8 +17,13 @@ struct connection {
     struct sockaddr_storage addr;
     socklen_t addr_len;
     int fd;
-    BST* tree;
 };
+
+typedef struct args_t{
+    struct connection* con;
+    BST* tree;
+
+}args_t;
 
 int server(char *port);
 void *echo(void *arg);
@@ -41,6 +46,10 @@ int server(char *port)
     struct connection *con;
     int error, sfd;
     pthread_t tid;
+
+    args_t* args = malloc(sizeof(args_t));
+    args->tree = newBST();
+    args->con = con;
 
     // initialize hints
     memset(&hint, 0, sizeof(struct addrinfo));
@@ -119,7 +128,7 @@ int server(char *port)
         }
 
 		// spin off a worker thread to handle the remote connection
-        error = pthread_create(&tid, NULL, echo, con);
+        error = pthread_create(&tid, NULL, echo, args);
 
 		// if we couldn't spin off the thread, clean up and wait for another connection
         if (error != 0) {
@@ -144,15 +153,23 @@ enum request{GET, SET, DEL};
 void *echo(void *arg)
 {
     char host[100], port[10], buf[BUFSIZE + 1];
-    struct connection *c = (struct connection *) arg;
+    args_t *args = (struct args_t *) arg;
+    struct connection *c = args->con;
     int error, nread;
     enum request req;
     int field = 0;
     int byteSize;
     int currByteCount = 0;
     bool isFailed = false;
-    strbuf_t* strbuf = malloc(sizeof(strbuf_t));
-    sb_init(strbuf, 10);
+    strbuf_t* readBuf = malloc(sizeof(strbuf_t));
+    strbuf_t* field1 = malloc(sizeof(strbuf_t));
+    strbuf_t* field2 = malloc(sizeof(strbuf_t));
+    strbuf_t* field3 = malloc(sizeof(strbuf_t));
+
+    sb_init(readBuf, 10);
+    sb_init(field1, 10);
+    sb_init(field2, 10);
+    sb_init(field3, 10);
 
 	// find out the name and port of the remote host
     error = getnameinfo((struct sockaddr *) &c->addr, c->addr_len, host, 100, port, 10, NI_NUMERICSERV);
@@ -192,20 +209,23 @@ void *echo(void *arg)
             buf[nread] = '\0';
 
             for(int i = 0; i < nread; i++){
+                
+
+                /*
                 if(buf[i] != '\n'){
-                    sb_append(strbuf, buf[i]);
+                    sb_append(readBuf, buf[i]);
                     currByteCount++;
                 }
                 else{
                     if(field == 0){     //Before the bytesize
                         field++;
                         printf("Found first newline\n");
-                        sb_destroy(strbuf);
-                        sb_init(strbuf, 10);
+                        sb_destroy(readBuf);
+                        sb_init(readBuf, 10);
                         continue;
                     }
                     else if(field == 1){    //Finished reading the bytesize
-                        byteSize = atoi(strbuf->data);
+                        byteSize = atoi(readBuf->data);
                         if(byteSize == 0){
                             printf("Error: [BAD]; Invalid byteSize entered\n");
                             break;
@@ -224,10 +244,11 @@ void *echo(void *arg)
                             break;
                         }
                         if(req == GET){
-                            printf("GET value associated with key '%s'\n", strbuf->data);
+                            printf("GET value associated with key '%s'\n", readBuf->data);
+                            args->tree = insert(args->tree, )
                         }
                         else if(req == DEL){
-                            printf("DELETE value associated with key '%s'\n", strbuf->data);
+                            printf("DELETE value associated with key '%s'\n", readBuf->data);
                         }
                         printf("Field 2:\n");
                     }
@@ -239,10 +260,10 @@ void *echo(void *arg)
                             break;
                         }
                         if(req == SET){
-                            printf("SET value associated with key '%s'\n", strbuf->data);
+                            printf("SET value associated with key '%s'\n", readBuf->data);
                         }
                     }
-                }
+                }*/
             }
 
             printf("[%s:%s] read %d bytes |%s|\n", host, port, nread, buf);
