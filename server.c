@@ -22,7 +22,6 @@ struct connection {
 typedef struct args_t{
     struct connection* con;
     BST* tree;
-
 }args_t;
 
 int server(char *port);
@@ -46,10 +45,12 @@ int server(char *port)
     struct connection *con;
     int error, sfd;
     pthread_t tid;
-
+    
+    
     args_t* args = malloc(sizeof(args_t));
     args->tree = newBST();
     args->con = con;
+    
 
     // initialize hints
     memset(&hint, 0, sizeof(struct addrinfo));
@@ -104,7 +105,6 @@ int server(char *port)
     for (;;) {
     	// create argument struct for child thread
 		con = malloc(sizeof(struct connection));
-
         con->addr_len = sizeof(struct sockaddr_storage);
         	// addr_len is a read/write parameter to accept
         	// we set the initial value, saying how much space is available
@@ -128,7 +128,10 @@ int server(char *port)
         }
 
 		// spin off a worker thread to handle the remote connection
+        args->con = con;
+        //error = pthread_create(&tid, NULL, echo, con);
         error = pthread_create(&tid, NULL, echo, args);
+
 
 		// if we couldn't spin off the thread, clean up and wait for another connection
         if (error != 0) {
@@ -153,8 +156,10 @@ enum request{GET, SET, DEL};
 void *echo(void *arg)
 {
     char host[100], port[10], buf[BUFSIZE + 1];
-    args_t *args = (struct args_t *) arg;
+    //struct connection *c = (struct connection *) arg;
+    args_t* args = (args_t*) arg;
     struct connection *c = args->con;
+
     int error, nread;
     enum request req;
     int field = 0;
@@ -166,11 +171,12 @@ void *echo(void *arg)
     strbuf_t* field2 = malloc(sizeof(strbuf_t));
     strbuf_t* field3 = malloc(sizeof(strbuf_t));
 
+
     sb_init(readBuf, 10);
     sb_init(field1, 10);
     sb_init(field2, 10);
     sb_init(field3, 10);
-
+    
 	// find out the name and port of the remote host
     error = getnameinfo((struct sockaddr *) &c->addr, c->addr_len, host, 100, port, 10, NI_NUMERICSERV);
     	// we provide:
@@ -209,9 +215,6 @@ void *echo(void *arg)
             buf[nread] = '\0';
 
             for(int i = 0; i < nread; i++){
-                
-
-                /*
                 if(buf[i] != '\n'){
                     sb_append(readBuf, buf[i]);
                     currByteCount++;
@@ -225,6 +228,8 @@ void *echo(void *arg)
                         continue;
                     }
                     else if(field == 1){    //Finished reading the bytesize
+                        printf("Found second newline, data is %s\n", readBuf->data);
+                        
                         byteSize = atoi(readBuf->data);
                         if(byteSize == 0){
                             printf("Error: [BAD]; Invalid byteSize entered\n");
@@ -233,26 +238,43 @@ void *echo(void *arg)
                         else{
                             printf("ByteSize set to %d\n", byteSize);
                         }
+                        sb_destroy(readBuf);
+                        sb_init(readBuf, 10);
                         currByteCount = 0;
                         field++;
                     }
                     else if(field == 2){    //Read first field
+                        printf("Found third newline, data is %s\n", readBuf->data);
+
                         //Do stuff with first field, depends on request
                         if(currByteCount > byteSize){
                             printf("Error [LEN]; Invalid length\n");
+                            //sb_destroy(readBuf);
                             isFailed = true;
                             break;
                         }
                         if(req == GET){
-                            printf("GET value associated with key '%s'\n", readBuf->data);
-                            args->tree = insert(args->tree, )
+                            node* val = findValue(args->tree, readBuf->data);
+                            if(val != NULL)
+                                printf("GET value associated with key '%s': '%s'\n", readBuf->data, val->value);
+                            else
+                                printf("GET value associated with key '%s': key not found\n", readBuf->data);
+
                         }
                         else if(req == DEL){
                             printf("DELETE value associated with key '%s'\n", readBuf->data);
                         }
-                        printf("Field 2:\n");
+                        else{   //req == SET
+                            sb_concat(field1, readBuf->data);
+                        }
+                        sb_destroy(readBuf);
+                        sb_init(readBuf, 10);
+
+                        field++;
                     }
                     else if(field == 3){
+                        printf("Found fourth newline, data is %s\n", readBuf->data);
+
                         //Do stuff with second field, depends on request
                         if(currByteCount > byteSize){
                             printf("Error [LEN]; Invalid length\n");
@@ -260,10 +282,11 @@ void *echo(void *arg)
                             break;
                         }
                         if(req == SET){
-                            printf("SET value associated with key '%s'\n", readBuf->data);
+                            printf("SET value associated with key '%s'\n", field1->data);
+                            insert(args->tree, field1->data, readBuf->data);
                         }
                     }
-                }*/
+                }
             }
 
             printf("[%s:%s] read %d bytes |%s|\n", host, port, nread, buf);
