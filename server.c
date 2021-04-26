@@ -5,6 +5,10 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <stdbool.h>
+
+#include "strBST.c"
+#include "strbuf.c"
 
 #define BACKLOG 5
 
@@ -13,6 +17,7 @@ struct connection {
     struct sockaddr_storage addr;
     socklen_t addr_len;
     int fd;
+    BST* tree;
 };
 
 int server(char *port);
@@ -90,6 +95,7 @@ int server(char *port)
     for (;;) {
     	// create argument struct for child thread
 		con = malloc(sizeof(struct connection));
+
         con->addr_len = sizeof(struct sockaddr_storage);
         	// addr_len is a read/write parameter to accept
         	// we set the initial value, saying how much space is available
@@ -133,11 +139,20 @@ int server(char *port)
 
 #define BUFSIZE 8
 
+enum request{GET, SET, DEL};
+
 void *echo(void *arg)
 {
     char host[100], port[10], buf[BUFSIZE + 1];
     struct connection *c = (struct connection *) arg;
     int error, nread;
+    enum request req;
+    int field = 0;
+    int byteSize;
+    int currByteCount = 0;
+    bool isFailed = false;
+    strbuf_t* strbuf = malloc(sizeof(strbuf_t));
+    sb_init(strbuf, 10);
 
 	// find out the name and port of the remote host
     error = getnameinfo((struct sockaddr *) &c->addr, c->addr_len, host, 100, port, 10, NI_NUMERICSERV);
@@ -154,13 +169,103 @@ void *echo(void *arg)
 
     printf("[%s:%s] connection\n", host, port);
 
-    while ((nread = read(c->fd, buf, BUFSIZE)) > 0) {
-        buf[nread] = '\0';
-        printf("[%s:%s] read %d bytes |%s|\n", host, port, nread, buf);
+    nread = read(c->fd, buf, 3);
+    buf[nread] = '\0';
+
+    if(strcmp(buf, "GET") == 0){
+        req = GET;      //0
+    }
+    else if(strcmp(buf, "SET") == 0){
+        req = SET;      //1
+    }
+    else if(strcmp(buf, "DEL") == 0){
+        req = DEL;      //2
+    }
+    else{
+        req = -1;
     }
 
+    printf("Request type: %d\n", req);
+
+    if(req != -1){      //If a valid request was made
+        while ((nread = read(c->fd, buf, BUFSIZE)) > 0) {
+            buf[nread] = '\0';
+
+            for(int i = 0; i < nread; i++){
+                if(buf[i] != '\n'){
+                    sb_append(strbuf, buf[i]);
+                    currByteCount++;
+                }
+                else{
+                    if(field == 0){     //Before the bytesize
+                        field++;
+                        printf("Found first newline\n");
+                        sb_destroy(strbuf);
+                        sb_init(strbuf, 10);
+                        continue;
+                    }
+                    else if(field == 1){    //Finished reading the bytesize
+                        byteSize = atoi(strbuf->data);
+                        if(byteSize == 0){
+                            printf("Error: [BAD]; Invalid byteSize entered\n");
+                            break;
+                        }
+                        else{
+                            printf("ByteSize set to %d\n", byteSize);
+                        }
+                        currByteCount = 0;
+                        field++;
+                    }
+                    else if(field == 2){    //Read first field
+                        //Do stuff with first field, depends on request
+                        if(currByteCount > byteSize){
+                            printf("Error [LEN]; Invalid length\n");
+                            isFailed = true;
+                            break;
+                        }
+                        if(req == GET){
+                            printf("GET value associated with key '%s'\n", strbuf->data);
+                        }
+                        else if(req == DEL){
+                            printf("DELETE value associated with key '%s'\n", strbuf->data);
+                        }
+                        printf("Field 2:\n");
+                    }
+                    else if(field == 3){
+                        //Do stuff with second field, depends on request
+                        if(currByteCount > byteSize){
+                            printf("Error [LEN]; Invalid length\n");
+                            isFailed = true;
+                            break;
+                        }
+                        if(req == SET){
+                            printf("SET value associated with key '%s'\n", strbuf->data);
+                        }
+                    }
+                }
+            }
+
+            printf("[%s:%s] read %d bytes |%s|\n", host, port, nread, buf);
+            if(isFailed)
+                break;
+        }
+
+        /*
+        else{
+            while ((nread = read(c->fd, buf, BUFSIZE)) > 0) {
+                buf[nread] = '\0';
+                printf("[%s:%s] read %d bytes |%s|\n", host, port, nread, buf);
+            }
+        }
+        */
+    }
+    else{
+        printf("Error [BAD]; Malformed message.\n");
+    }
     printf("[%s:%s] got EOF\n", host, port);
 
+    if(isFailed)
+        printf("Failure\n");
     close(c->fd);
     free(c);
     return NULL;
