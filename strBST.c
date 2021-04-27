@@ -46,6 +46,7 @@ node* insertHelper(node* root, char* key, char* value){
 
 void insert(BST* tree, char* key, char* value){
     tree->root = insertHelper(tree->root, key, value);
+    tree->totalCount++;
 }
 
 BST* newBST(){
@@ -80,6 +81,69 @@ node* findValue(BST* tree, char* key){
     return findValueHelper(tree->root, key);
 }
 
+node* findMin(node* root){
+    if(root == NULL)
+        return NULL;
+    else if(root->leftChild != NULL)
+        return findMin(root->leftChild);
+    return root;
+}
+
+node* deleteValueHelper(node* root, char* key, BST* tree){
+    if(root == NULL){
+        printf("Key not found\n");
+        return NULL;
+    }
+    else if(strcmp(key, root->key) < 0)                             //If the search value is less than the current node, continue search left
+        root->leftChild = deleteValueHelper(root->leftChild, key, tree);
+    else if(strcmp(key, root->key) > 0)                               //If the search value is greater than the current node, continue search right
+        root->rightChild = deleteValueHelper(root->rightChild, key, tree);
+    else{           //If the item is found
+        if(root->leftChild == NULL && root->rightChild == NULL){
+            free(root->key);
+            free(root->value);
+            free(root);
+            tree->totalCount--;
+            return NULL;
+        }
+
+        else if(root->leftChild == NULL || root->rightChild == NULL){
+            node* newParent;
+            if(root->leftChild == NULL){
+                newParent = root->rightChild;
+            }
+            else{
+                newParent = root->leftChild;
+            }
+            free(root->key);
+            free(root->value);
+            free(root);
+            tree->totalCount--;
+            return newParent;
+        }
+        else{
+            node* newParent;
+            newParent = findMin(root->rightChild);
+            free(root->key);
+            free(root->value);
+
+            char* tempKey = malloc(strlen(newParent->key) + 1);
+            char* tempVal = malloc(strlen(newParent->value) + 1);
+            strcpy(tempKey, newParent->key);
+            strcpy(tempVal, newParent->value);
+
+            root->key = tempKey;
+            root->value = tempVal;
+            root->rightChild = deleteValueHelper(root->rightChild, newParent->key, tree);
+        }
+    }
+    return root;
+}
+
+void deleteValue(BST* tree, char* key){
+    tree->root = deleteValueHelper(tree->root, key, tree);
+}
+
 void freeBSTHelper(node* root){
     if(root != NULL){
         freeBSTHelper(root->rightChild);
@@ -95,15 +159,23 @@ void freeBST(BST* tree){
     free(tree);
 }
 
-/*
+
 int main(int argc, char **argv)
 {
+    /*
 	BST* tree1 = newBST();
-    insert(tree1, "key1", "yo1");
     insert(tree1, "key2", "yo2");
+    insert(tree1, "key4", "yo4");
+    insert(tree1, "key3", "yo3");
     insert(tree1, "key6", "yo6");
+    insert(tree1, "key5", "yo5");
+    insert(tree1, "key1", "yo1");
     insert(tree1, "yek99", "yo99");
+    printf("Tree count: %d\n", tree1->totalCount);
+    printf("deleting key3\n");
+    deleteValue(tree1, "key3");
     printTree(tree1);
-    printf("%s\n", findValue(tree1, "key6")->value);
+    printf("Tree count after one delete: %d\n", tree1->totalCount);
+    freeBST(tree1);
+    */
 }
-*/
