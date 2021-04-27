@@ -160,6 +160,7 @@ void *echo(void *arg)
     args_t* args = (args_t*) arg;
     struct connection *c = args->con;
 
+    char* err = malloc(sizeof(char) * 3);
     int error, nread;
     enum request req;
     int field = 0;
@@ -196,7 +197,6 @@ void *echo(void *arg)
         for(int i = 0; i < nread; i++){
             if(buf[i] != '\n'){
                 sb_append(readBuf, buf[i]);
-                currByteCount++;
             }
             else{
                 if(field == 0){     //Finished reading the request type
@@ -214,6 +214,7 @@ void *echo(void *arg)
                     else{
                         req = -1;
                         isFailed = true;
+                        err = "BAD";
                         break;
                     }
                     printf("Request type: %d\n", req);
@@ -226,6 +227,8 @@ void *echo(void *arg)
                     byteSize = atoi(readBuf->data);
                     if(byteSize == 0){
                         printf("Error: [BAD]; Invalid byteSize entered\n");
+                        err = "BAD";
+                        isFailed = true;
                         break;
                     }
                     else{
@@ -235,13 +238,14 @@ void *echo(void *arg)
                     sb_init(readBuf, 10);
                     currByteCount = 0;
                 }
-                else if(field == 2){    //Read first field
+                else if(field == 2){    //Read first string field
                     printf("Found third newline, data is %s\n", readBuf->data);
                     field++;
 
-                    //Do stuff with first field, depends on request
+                    //If the bytecount is beyond what it should be
                     if(currByteCount > byteSize){
                         printf("Error [LEN]; Invalid length\n");
+                        err = "LEN";
                         isFailed = true;
                         break;
                     }
@@ -252,11 +256,14 @@ void *echo(void *arg)
                             printf("GET value associated with key [%s]: [%s]\n", readBuf->data, val->value);
                         else
                             printf("GET value associated with key [%s]: key not found\n", readBuf->data);
-
                     }
                     else if(req == DEL){
                         field = 0;
                         printf("DELETE value associated with key '%s'\n", readBuf->data);
+                        int preCount = args->tree->totalCount;
+                        deleteValue(args->tree, readBuf->data);
+                        if(preCount == args->tree->totalCount)  //Nothing was deleted, key not found
+                            printf("DELETE value associated with key '%s' not found\n", readBuf->data);
                     }
                     else{   //req == SET
                         sb_concat(field1, readBuf->data);
@@ -269,7 +276,8 @@ void *echo(void *arg)
                     printf("Found fourth newline, data is %s\n", readBuf->data);
 
                     //Do stuff with second field, depends on request
-                    if(currByteCount > byteSize){
+                    if(currByteCount != byteSize){
+                        printf("Current byte [%d] and byteSize [%d]\n", currByteCount, byteSize);
                         printf("Error [LEN]; Invalid length\n");
                         isFailed = true;
                         break;
@@ -278,24 +286,26 @@ void *echo(void *arg)
                         printf("SET value '%s' associated with key '%s'\n", readBuf->data, field1->data);
                         insert(args->tree, field1->data, readBuf->data);
                     }
+                    else{
+                        isFailed = true;
+                        printf("Error [BAD]; Malformed message\n");
+                        err = "BAD";
+                        sb_destroy(readBuf);
+                        sb_init(readBuf, 10);
+                        sb_destroy(field1);
+                        sb_init(field1, 10);
+                        break;
+                    }
                     sb_destroy(readBuf);
                     sb_init(readBuf, 10);
                     sb_destroy(field1);
                     sb_init(field1, 10);
                 }
             }
+            currByteCount++;
         }
 
         printf("[%s:%s] read %d bytes |%s|\n", host, port, nread, buf);
-
-        /*
-        else{
-            while ((nread = read(c->fd, buf, BUFSIZE)) > 0) {
-                buf[nread] = '\0';
-                printf("[%s:%s] read %d bytes |%s|\n", host, port, nread, buf);
-            }
-        }
-        */
     }
     printf("[%s:%s] got EOF\n", host, port);
 

@@ -159,10 +159,10 @@ void freeBST(BST* tree){
     free(tree);
 }
 
-
+/*
 int main(int argc, char **argv)
 {
-    /*
+    
 	BST* tree1 = newBST();
     insert(tree1, "key2", "yo2");
     insert(tree1, "key4", "yo4");
@@ -177,5 +177,6 @@ int main(int argc, char **argv)
     printTree(tree1);
     printf("Tree count after one delete: %d\n", tree1->totalCount);
     freeBST(tree1);
-    */
+    
 }
+*/
