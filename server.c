@@ -169,12 +169,10 @@ void *echo(void *arg)
     bool isFailed = false;
     strbuf_t* readBuf = malloc(sizeof(strbuf_t));
     strbuf_t* field1 = malloc(sizeof(strbuf_t));
-    strbuf_t* field2 = malloc(sizeof(strbuf_t));
 
     sb_init(readBuf, 10);
     sb_init(field1, 10);
-    sb_init(field2, 10);
-    
+
 	// find out the name and port of the remote host
     error = getnameinfo((struct sockaddr *) &c->addr, c->addr_len, host, 100, port, 10, NI_NUMERICSERV);
     	// we provide:
@@ -361,6 +359,6 @@ void *echo(void *arg)
     fclose(fp);
     close(c->fd);
     free(c);
-    printTree(args->tree);
+    //printTree(args->tree);
     return NULL;
 }
