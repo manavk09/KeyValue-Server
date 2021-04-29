@@ -157,7 +157,8 @@ void *echo(void *arg)
     //struct connection *c = (struct connection *) arg;
     args_t* args = (args_t*) arg;
     struct connection *c = args->con;
-
+    FILE* fp = fdopen(args->con->fd, "w");
+    
     char* msg = malloc(sizeof(char) * 3);
 
     int error, nread;
@@ -213,7 +214,9 @@ void *echo(void *arg)
                     else{
                         req = -1;
                         isFailed = true;
-                        msg = "BAD";
+                        //msg = "BAD";
+                        fprintf(fp, "BAD\n");
+                        fflush(fp);
                         break;
                     }
                     if(DEBUG)printf("Request type: %d\n", req);
@@ -225,7 +228,9 @@ void *echo(void *arg)
                     field++;
                     byteSize = atoi(readBuf->data);
                     if(byteSize == 0){
-                        msg = "BAD";
+                        //msg = "BAD";
+                        fprintf(fp, "BAD\n");
+                        fflush(fp);
                         isFailed = true;
                         break;
                     }
@@ -242,35 +247,58 @@ void *echo(void *arg)
 
                     //If the bytecount is beyond what it should be
                     if(currByteCount > byteSize){
-                        msg = "LEN";
+                        //msg = "LEN";
+                        fprintf(fp, "LEN\n");
+                        fflush(fp);
                         isFailed = true;
                         break;
                     }
                     else if(req == GET){
+                        if(currByteCount != byteSize){
+                            if(DEBUG) printf("Current byte [%d] and byteSize [%d]\n", currByteCount, byteSize);
+                            //msg = "LEN";
+                            fprintf(fp, "LEN\n");
+                            fflush(fp);
+                            isFailed = true;
+                            break;
+                        }
                         field = 0;
                         currByteCount = 0;
                         node* val = findValue(args->tree, readBuf->data);
+                        
                         if(val != NULL){
-                            msg = "OKG";
-                            printf("OKG\n%ld\n%s\n", strlen(val->value) + 1, val->value);
+                            //msg = "OKG";
+                            fprintf(fp, "OKG\n%ld\n%s\n", strlen(val->value) + 1, val->value);
+                            fflush(fp);
                         }
                         else{
-                            msg = "KNF";
-                            printf("KNF\n");
+                            //msg = "KNF";
+                            fprintf(fp, "KNF\n");
+                            fflush(fp);
                         }
                     }
                     else if(req == DEL){
+                        if(currByteCount != byteSize){
+                            if(DEBUG) printf("Current byte [%d] and byteSize [%d]\n", currByteCount, byteSize);
+                            //msg = "LEN";
+                            fprintf(fp, "LEN\n");
+                            fflush(fp);
+                            isFailed = true;
+                            break;
+                        }
                         field = 0;
                         currByteCount = 0;
                         node* val = findValue(args->tree, readBuf->data);
                         if(val != NULL){
-                            msg = "OKD";
-                            printf("OKD\n%ld\n%s\n", strlen(val->value) + 1, val->value);
+                            //msg = "OKD";
+                            fprintf(fp, "OKD\n%ld\n%s\n", strlen(val->value) + 1, val->value);
+                            fflush(fp);
                             deleteValue(args->tree, readBuf->data);
                         }
                         else{
-                            msg = "KNF";
-                            printf("KNF\n");
+                            //msg = "KNF";
+                            fprintf(fp, "KNF\n");
+                            fflush(fp);
                         }
 
                     }
@@ -287,19 +315,24 @@ void *echo(void *arg)
                     //Do stuff with second field, depends on request
                     if(currByteCount != byteSize){
                         if(DEBUG) printf("Current byte [%d] and byteSize [%d]\n", currByteCount, byteSize);
-                        msg = "LEN";
+                        //msg = "LEN";
+                        fprintf(fp, "LEN\n");
+                        fflush(fp);
                         isFailed = true;
                         break;
                     }
                     if(req == SET){
                         field = 0;
                         currByteCount = 0;
-                        printf("OKS\n");
+                        fprintf(fp, "OKS\n");
+                        fflush(fp);
                         insert(args->tree, field1->data, readBuf->data);
                     }
                     else{
                         isFailed = true;
-                        msg = "BAD";
+                        //msg = "BAD";
+                        fprintf(fp, "BAD\n");
+                        fflush(fp);
                         sb_destroy(readBuf);
                         sb_init(readBuf, 10);
                         sb_destroy(field1);
@@ -319,8 +352,13 @@ void *echo(void *arg)
     }
     printf("[%s:%s] got EOF\n", host, port);
     
-    if(isFailed)
-        printf("%s\n", msg);
+    /*
+    if(isFailed){
+        fprintf(fp, "%s\n", msg);
+        fflush(fp);
+    }
+    */
+    fclose(fp);
     close(c->fd);
     free(c);
     printTree(args->tree);

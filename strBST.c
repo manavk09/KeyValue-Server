@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <unistd.h>
 
 typedef struct node{
     char* key;
@@ -10,6 +12,7 @@ typedef struct node{
 } node;
 
 typedef struct BST{
+	pthread_mutex_t lock;
     int totalCount;
     struct node* root;
 } BST;
@@ -45,14 +48,17 @@ node* insertHelper(node* root, char* key, char* value){
 }
 
 void insert(BST* tree, char* key, char* value){
+    pthread_mutex_lock(&tree->lock);
     tree->root = insertHelper(tree->root, key, value);
     tree->totalCount++;
+    pthread_mutex_unlock(&tree->lock);
 }
 
 BST* newBST(){
     BST* tree = malloc(sizeof(BST));
     tree->root = NULL;
     tree->totalCount = 0;
+    pthread_mutex_init(&tree->lock, NULL);
     return tree;
 }
 
@@ -141,7 +147,9 @@ node* deleteValueHelper(node* root, char* key, BST* tree){
 }
 
 void deleteValue(BST* tree, char* key){
+    pthread_mutex_lock(&tree->lock);
     tree->root = deleteValueHelper(tree->root, key, tree);
+    pthread_mutex_unlock(&tree->lock);
 }
 
 void freeBSTHelper(node* root){
