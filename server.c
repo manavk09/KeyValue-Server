@@ -1,9 +1,12 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <netdb.h>
+#include <signal.h>
 #include <pthread.h>
 #include <stdbool.h>
 
@@ -11,6 +14,11 @@
 #include "strbuf.c"
 
 #define BACKLOG 5
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+
+int running = 1;
 
 // the argument we will pass to the connection-handler threads
 struct connection {
@@ -38,6 +46,10 @@ int main(int argc, char **argv)
     return EXIT_SUCCESS;
 }
 
+void handler(int signal)
+{
+	running = 0;
+}
 
 int server(char *port)
 {
@@ -97,10 +109,20 @@ int server(char *port)
     }
 
     freeaddrinfo(info_list);
-
+        struct sigaction act;
+        act.sa_handler = handler;
+        act.sa_flags = 0;
+        sigemptyset(&act.sa_mask);
+        sigaction(SIGINT, &act, NULL);
+        
+        sigset_t mask;
+        
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGINT);
+    
     // at this point sfd is bound and listening
     printf("Waiting for connection\n");
-    for (;;) {
+    while (running) {
     	// create argument struct for child thread
 		con = malloc(sizeof(struct connection));
         con->addr_len = sizeof(struct sockaddr_storage);
@@ -125,11 +147,17 @@ int server(char *port)
             continue;
         }
 
+        // temporarily block SIGINT (child will inherit mask)
+        error = pthread_sigmask(SIG_BLOCK, &mask, NULL);
+        if (error != 0) {
+        	fprintf(stderr, "sigmask: %s\n", strerror(error));
+        	abort();
+        }
+
 		// spin off a worker thread to handle the remote connection
         args->con = con;
         //error = pthread_create(&tid, NULL, echo, con);
         error = pthread_create(&tid, NULL, echo, args);
-
 
 		// if we couldn't spin off the thread, clean up and wait for another connection
         if (error != 0) {
@@ -141,8 +169,21 @@ int server(char *port)
 
 		// otherwise, detach the thread and wait for the next connection request
         pthread_detach(tid);
-    }
 
+        // unblock SIGINT
+        error = pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
+        if (error != 0) {
+        	fprintf(stderr, "sigmask: %s\n", strerror(error));
+        	abort();
+        }
+
+    }
+    puts("No longer listening.");
+    freeBST(args->tree);
+    free(con);
+    free(args);
+	pthread_detach(pthread_self());
+	pthread_exit(NULL);
     // never reach here
     return 0;
 }
@@ -158,9 +199,8 @@ void *echo(void *arg)
     args_t* args = (args_t*) arg;
     struct connection *c = args->con;
     FILE* fp = fdopen(args->con->fd, "w");
-    
-    char* msg = malloc(sizeof(char) * 3);
 
+    bool initBufs = true;
     int error, nread;
     enum request req;
     int field = 0;
@@ -169,9 +209,6 @@ void *echo(void *arg)
     bool isFailed = false;
     strbuf_t* readBuf = malloc(sizeof(strbuf_t));
     strbuf_t* field1 = malloc(sizeof(strbuf_t));
-
-    sb_init(readBuf, 10);
-    sb_init(field1, 10);
 
 	// find out the name and port of the remote host
     error = getnameinfo((struct sockaddr *) &c->addr, c->addr_len, host, 100, port, 10, NI_NUMERICSERV);
@@ -188,9 +225,14 @@ void *echo(void *arg)
 
     printf("[%s:%s] connection\n", host, port);
 
-      //If a valid request was made
     while ((nread = read(c->fd, buf, BUFSIZE)) > 0 && !isFailed) {
         buf[nread] = '\0';
+
+        if(initBufs){
+            sb_init(readBuf, 10);
+            sb_init(field1, 10);
+            initBufs = false;
+        }
 
         for(int i = 0; i < nread; i++){
             if(buf[i] != '\n'){
@@ -212,7 +254,8 @@ void *echo(void *arg)
                     else{
                         req = -1;
                         isFailed = true;
-                        //msg = "BAD";
+                        sb_destroy(readBuf);
+                        sb_destroy(field1);
                         fprintf(fp, "BAD\n");
                         fflush(fp);
                         break;
@@ -226,7 +269,8 @@ void *echo(void *arg)
                     field++;
                     byteSize = atoi(readBuf->data);
                     if(byteSize == 0){
-                        //msg = "BAD";
+                        sb_destroy(readBuf);
+                        sb_destroy(field1);
                         fprintf(fp, "BAD\n");
                         fflush(fp);
                         isFailed = true;
@@ -245,7 +289,8 @@ void *echo(void *arg)
 
                     //If the bytecount is beyond what it should be
                     if(currByteCount > byteSize){
-                        //msg = "LEN";
+                        sb_destroy(readBuf);
+                        sb_destroy(field1);
                         fprintf(fp, "LEN\n");
                         fflush(fp);
                         isFailed = true;
@@ -254,7 +299,8 @@ void *echo(void *arg)
                     else if(req == GET){
                         if(currByteCount != byteSize){
                             if(DEBUG) printf("Current byte [%d] and byteSize [%d]\n", currByteCount, byteSize);
-                            //msg = "LEN";
+                            sb_destroy(readBuf);
+                            sb_destroy(field1);
                             fprintf(fp, "LEN\n");
                             fflush(fp);
                             isFailed = true;
@@ -265,20 +311,22 @@ void *echo(void *arg)
                         node* val = findValue(args->tree, readBuf->data);
                         
                         if(val != NULL){
-                            //msg = "OKG";
                             fprintf(fp, "OKG\n%ld\n%s\n", strlen(val->value) + 1, val->value);
                             fflush(fp);
                         }
                         else{
-                            //msg = "KNF";
                             fprintf(fp, "KNF\n");
                             fflush(fp);
                         }
+                        sb_destroy(readBuf);
+                        sb_destroy(field1);
+                        initBufs = true;
                     }
                     else if(req == DEL){
                         if(currByteCount != byteSize){
                             if(DEBUG) printf("Current byte [%d] and byteSize [%d]\n", currByteCount, byteSize);
-                            //msg = "LEN";
+                            sb_destroy(readBuf);
+                            sb_destroy(field1);
                             fprintf(fp, "LEN\n");
                             fflush(fp);
                             isFailed = true;
@@ -288,23 +336,24 @@ void *echo(void *arg)
                         currByteCount = 0;
                         node* val = findValue(args->tree, readBuf->data);
                         if(val != NULL){
-                            //msg = "OKD";
                             fprintf(fp, "OKD\n%ld\n%s\n", strlen(val->value) + 1, val->value);
                             fflush(fp);
                             deleteValue(args->tree, readBuf->data);
                         }
                         else{
-                            //msg = "KNF";
                             fprintf(fp, "KNF\n");
                             fflush(fp);
                         }
+                        sb_destroy(readBuf);
+                        sb_destroy(field1);
+                        initBufs = true;
 
                     }
                     else{   //req == SET
                         sb_concat(field1, readBuf->data);
+                        sb_destroy(readBuf);
+                        sb_init(readBuf, 10);
                     }
-                    sb_destroy(readBuf);
-                    sb_init(readBuf, 10);
 
                 }
                 else if(field == 3){
@@ -313,7 +362,8 @@ void *echo(void *arg)
                     //Do stuff with second field, depends on request
                     if(currByteCount != byteSize){
                         if(DEBUG) printf("Current byte [%d] and byteSize [%d]\n", currByteCount, byteSize);
-                        //msg = "LEN";
+                        sb_destroy(readBuf);
+                        sb_destroy(field1);
                         fprintf(fp, "LEN\n");
                         fflush(fp);
                         isFailed = true;
@@ -328,19 +378,15 @@ void *echo(void *arg)
                     }
                     else{
                         isFailed = true;
-                        //msg = "BAD";
+                        sb_destroy(readBuf);
+                        sb_destroy(field1);
                         fprintf(fp, "BAD\n");
                         fflush(fp);
-                        sb_destroy(readBuf);
-                        sb_init(readBuf, 10);
-                        sb_destroy(field1);
-                        sb_init(field1, 10);
                         break;
                     }
                     sb_destroy(readBuf);
-                    sb_init(readBuf, 10);
                     sb_destroy(field1);
-                    sb_init(field1, 10);
+                    initBufs = true;
                 }
             }
             currByteCount++;
@@ -350,14 +396,10 @@ void *echo(void *arg)
     }
     printf("[%s:%s] got EOF\n", host, port);
     
-    /*
-    if(isFailed){
-        fprintf(fp, "%s\n", msg);
-        fflush(fp);
-    }
-    */
     fclose(fp);
     close(c->fd);
+    free(readBuf);
+    free(field1);
     free(c);
     //printTree(args->tree);
     return NULL;

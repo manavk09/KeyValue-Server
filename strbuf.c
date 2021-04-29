@@ -102,34 +102,7 @@ int sb_concat(strbuf_t *sb, char *str)
         i++;
     }
     return 0;
-    /*
-    int strLength = 1;
-    char c = str[0];
-    while(c != '\0'){
-        strLength++;
-        c = str[strLength - 1];
-    }
-    
-    if (sb->used == sb->length || sb->length < strLength + (sb->used - 1)) {
-        size_t size = sb->length * 2;
-        if(strLength + (sb->used - 1) > size){
-            size = strLength + (sb->used - 1);
-        }
-        char *p = realloc(sb->data, sizeof(char) * size);
-        if (!p) return 1;
 
-        sb->data = p;
-        sb->length = size;
-
-        if (DEBUG) printf("Increased size to %lu\n", size);
-    }
-
-    for(int i = 0; i < strLength; i++){
-        sb->data[i + (sb->used - 1)] = str[i];
-    }
-    sb->used = sb->used + strLength - 1;
-    return 0;
-    */
 }
 
 void printList(strbuf_t *list)

@@ -164,27 +164,6 @@ void freeBSTHelper(node* root){
 
 void freeBST(BST* tree){
     freeBSTHelper(tree->root);
+    pthread_mutex_destroy(&tree->lock);
     free(tree);
 }
-
-/*
-int main(int argc, char **argv)
-{
-    
-	BST* tree1 = newBST();
-    insert(tree1, "key2", "yo2");
-    insert(tree1, "key4", "yo4");
-    insert(tree1, "key3", "yo3");
-    insert(tree1, "key6", "yo6");
-    insert(tree1, "key5", "yo5");
-    insert(tree1, "key1", "yo1");
-    insert(tree1, "yek99", "yo99");
-    printf("Tree count: %d\n", tree1->totalCount);
-    printf("deleting key3\n");
-    deleteValue(tree1, "key3");
-    printTree(tree1);
-    printf("Tree count after one delete: %d\n", tree1->totalCount);
-    freeBST(tree1);
-    
-}
-*/
