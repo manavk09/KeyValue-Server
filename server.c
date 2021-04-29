@@ -46,12 +46,10 @@ int server(char *port)
     int error, sfd;
     pthread_t tid;
     
-    
     args_t* args = malloc(sizeof(args_t));
     args->tree = newBST();
     args->con = con;
     
-
     // initialize hints
     memset(&hint, 0, sizeof(struct addrinfo));
     hint.ai_family = AF_UNSPEC;
@@ -202,7 +200,7 @@ void *echo(void *arg)
             else{
                 if(field == 0){     //Finished reading the request type
                     field++;
-                    printf("Found first newline; data is [%s]\n", readBuf->data);
+                    if(DEBUG)printf("Found first newline; data is [%s]\n", readBuf->data);
                     if(strcmp(readBuf->data, "GET") == 0){
                         req = GET;      //0
                     }
@@ -218,29 +216,28 @@ void *echo(void *arg)
                         msg = "BAD";
                         break;
                     }
-                    printf("Request type: %d\n", req);
+                    if(DEBUG)printf("Request type: %d\n", req);
                     sb_destroy(readBuf);
                     sb_init(readBuf, 10);
                 }
                 else if(field == 1){    //Finished reading the bytesize
-                    printf("Found second newline, data is %s\n", readBuf->data);
+                    if(DEBUG)printf("Found second newline, data is %s\n", readBuf->data);
                     field++;
                     byteSize = atoi(readBuf->data);
                     if(byteSize == 0){
-                        printf("Error: [BAD]; Invalid byteSize entered\n");
                         msg = "BAD";
                         isFailed = true;
                         break;
                     }
                     else{
-                        printf("ByteSize set to %d\n", byteSize);
+                        if(DEBUG) printf("ByteSize set to %d\n", byteSize);
                     }
                     sb_destroy(readBuf);
                     sb_init(readBuf, 10);
                     currByteCount = 0;
                 }
                 else if(field == 2){    //Read first string field
-                    printf("Found third newline, data is %s\n", readBuf->data);
+                    if(DEBUG) printf("Found third newline, data is %s\n", readBuf->data);
                     field++;
 
                     //If the bytecount is beyond what it should be
@@ -251,6 +248,7 @@ void *echo(void *arg)
                     }
                     else if(req == GET){
                         field = 0;
+                        currByteCount = 0;
                         node* val = findValue(args->tree, readBuf->data);
                         if(val != NULL){
                             msg = "OKG";
@@ -263,11 +261,12 @@ void *echo(void *arg)
                     }
                     else if(req == DEL){
                         field = 0;
-                        int preCount = args->tree->totalCount;
+                        currByteCount = 0;
                         node* val = findValue(args->tree, readBuf->data);
                         if(val != NULL){
                             msg = "OKD";
                             printf("OKD\n%ld\n%s\n", strlen(val->value) + 1, val->value);
+                            deleteValue(args->tree, readBuf->data);
                         }
                         else{
                             msg = "KNF";
@@ -283,16 +282,18 @@ void *echo(void *arg)
 
                 }
                 else if(field == 3){
-                    printf("Found fourth newline, data is %s\n", readBuf->data);
+                    if(DEBUG) printf("Found fourth newline, data is %s\n", readBuf->data);
 
                     //Do stuff with second field, depends on request
                     if(currByteCount != byteSize){
-                        printf("Current byte [%d] and byteSize [%d]\n", currByteCount, byteSize);
+                        if(DEBUG) printf("Current byte [%d] and byteSize [%d]\n", currByteCount, byteSize);
                         msg = "LEN";
                         isFailed = true;
                         break;
                     }
                     if(req == SET){
+                        field = 0;
+                        currByteCount = 0;
                         printf("OKS\n");
                         insert(args->tree, field1->data, readBuf->data);
                     }
@@ -314,12 +315,12 @@ void *echo(void *arg)
             currByteCount++;
         }
 
-        printf("[%s:%s] read %d bytes |%s|\n", host, port, nread, buf);
+        //printf("[%s:%s] read %d bytes |%s|\n", host, port, nread, buf);
     }
     printf("[%s:%s] got EOF\n", host, port);
-
+    
     if(isFailed)
-        printf("Failure: %s\n", msg);
+        printf("%s\n", msg);
     close(c->fd);
     free(c);
     printTree(args->tree);
